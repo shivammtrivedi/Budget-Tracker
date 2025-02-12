@@ -3,6 +3,7 @@ from flask_jwt_extended import jwt_required, create_access_token
 from models import db, User
 from utils.security import hash_password, verify_password
 from datetime import timedelta
+import re
 
 # eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJmcmVzaCI6ZmFsc2UsIml \
 # hdCI6MTczOTM0NjY1NSwianRpIjoiM2JmYmEzMzQtNzcwZC00NzQ3LWE0ND \
@@ -14,16 +15,37 @@ from datetime import timedelta
 auth_bp = Blueprint("auth", __name__)
 
 # User Registration Route
+def is_valid_password(password):
+    """Check if the password meets the security requirements."""
+    if len(password) < 8:
+        return "Password must be at least 8 characters long."
+    if not re.search(r"[A-Z]", password):
+        return "Password must contain at least one uppercase letter."
+    if not re.search(r"[a-z]", password):
+        return "Password must contain at least one lowercase letter."
+    if not re.search(r"\d", password):
+        return "Password must contain at least one number."
+    if not re.search(r"[!@#$%^&*(),.?\":{}|<>]", password):
+        return "Password must contain at least one special character."
+    return None  # No issues, password is valid
+
 @auth_bp.route("/register", methods=["POST"])
 def register():
     data = request.json
+    email = data.get("email")
+    password = data.get("password")
 
-    # Check if user already exists
-    if User.query.filter_by(email=data["email"]).first():
+    # Check if email already exists
+    if User.query.filter_by(email=email).first():
         return jsonify({"error": "Email already registered"}), 400
 
+    # Validate password
+    password_error = is_valid_password(password)
+    if password_error:
+        return jsonify({"error": password_error}), 400
+
     # Hash password and create new user
-    new_user = User(email=data["email"], password_hash=hash_password(data["password"]))
+    new_user = User(email=email, password_hash=hash_password(password))
     db.session.add(new_user)
     db.session.commit()
 
@@ -39,7 +61,7 @@ def login():
         return jsonify({"error": "Invalid credentials"}), 401
 
     # Generate JWT token valid for 1 hour
-    access_token = create_access_token(identity=user.id, expires_delta=timedelta(hours=1))
+    access_token = create_access_token(identity=str(user.id), expires_delta=timedelta(hours=1))
 
     return jsonify({"access_token": access_token, "user_id": user.id}), 200
 
